@@ -19,7 +19,7 @@ client = AzureOpenAI(
     api_key=AZURE_OAI_KEY,
     api_version="2024-02-15-preview"
 )
-tools = [write_file_tool, write_files_tool, shell_tool]
+tools = [write_file_tool, write_files_tool, shell_tool, edit_file_tool]
 history = ChatMemory()
 
 # Initial system prompt
@@ -61,6 +61,7 @@ while True:
 
             if tool_name == "write_file":
                 result = write_file(**args)
+                
             elif tool_name == "write_files":
                 result = write_files(**args)
 
@@ -72,6 +73,9 @@ while True:
 
                 cmd_output = run_shell_command(command=command, user_input=user_input)
                 print(f"🖥️ Command output:\n{cmd_output}")
+            
+            elif tool_name == "edit_file":
+                result = edit_file(**args)
             else:
                 result = f"⚠️ Unknown tool: {tool_name}"
     else:

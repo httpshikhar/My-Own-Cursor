@@ -92,3 +92,63 @@ write_files_tool = {
         }
     }
 }
+
+def edit_file(path: str, new_content: str, mode: str = "append") -> str:
+    """
+    Edit an existing file by appending, prepending, or replacing its content.
+
+    Parameters:
+    - path: file path to edit
+    - new_content: text to add
+    - mode: 'append', 'prepend', or 'replace' (default: append)
+    """
+    if not os.path.exists(path):
+        return f"❌ File does not exist: {path}"
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            current_content = f.read()
+
+        if mode == "replace":
+            updated_content = new_content
+        elif mode == "prepend":
+            updated_content = new_content + "\n" + current_content
+        elif mode == "append":
+            updated_content = current_content + "\n" + new_content
+        else:
+            return f"⚠️ Invalid mode: {mode}. Use 'append', 'prepend', or 'replace'."
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(updated_content)
+
+        return f"✅ File edited successfully: {path} (mode: {mode})"
+
+    except Exception as e:
+        return f"❌ Error editing file {path}: {str(e)}"
+
+edit_file_tool = {
+    "type": "function",
+    "function": {
+        "name": "edit_file",
+        "description": "Edits an existing file by appending, prepending, or replacing its content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The file to edit"
+                },
+                "new_content": {
+                    "type": "string",
+                    "description": "Content to add to the file"
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "How to edit the file: 'append', 'prepend', or 'replace'",
+                    "enum": ["append", "prepend", "replace"]
+                }
+            },
+            "required": ["path", "new_content"]
+        }
+    }
+}
