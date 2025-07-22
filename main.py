@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 from openai import AzureOpenAI
 from tool_registry import get_available_tools
 from chat_memory import ChatMemory
-from tools.file_tools import * 
+from tools.file_tools import *
+from tools.shell_tool import *
 
 # Load secrets
 load_dotenv()
@@ -18,7 +19,7 @@ client = AzureOpenAI(
     api_key=AZURE_OAI_KEY,
     api_version="2024-02-15-preview"
 )
-tools = [write_file_tool, write_files_tool]
+tools = [write_file_tool, write_files_tool, shell_tool]
 history = ChatMemory()
 
 # Initial system prompt
@@ -62,9 +63,16 @@ while True:
                 result = write_file(**args)
             elif tool_name == "write_files":
                 result = write_files(**args)
+
+            elif tool_call.function.name == "run_shell_command":
+                args = json.loads(tool_call.function.arguments)
+
+                command = args.get("command")
+                user_input = args.get("user_input")  # might be None
+
+                cmd_output = run_shell_command(command=command, user_input=user_input)
+                print(f"🖥️ Command output:\n{cmd_output}")
             else:
                 result = f"⚠️ Unknown tool: {tool_name}"
-
-            print(result)
     else:
         print("❌ No tool call detected. LLM didn't use a tool.")
