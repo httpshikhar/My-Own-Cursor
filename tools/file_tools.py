@@ -152,3 +152,63 @@ edit_file_tool = {
         }
     }
 }
+
+def read_file(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return f"📄 Content of {path}:\n{content}"
+    except Exception as e:
+        return f"❌ Failed to read {path}: {str(e)}"
+
+
+read_file_tool = {
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Reads the content of a single file at the given path.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path of the file to read (e.g., 'main.py')"
+                }
+            },
+            "required": ["path"]
+        }
+    }
+}
+
+def read_files(paths: list[str]) -> str:
+    results = []
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            results.append(f"📄 {path}:\n{content}")
+        except Exception as e:
+            results.append(f"❌ Failed to read {path}: {str(e)}")
+    return "\n\n".join(results)
+
+
+read_files_tool = {
+    "type": "function",
+    "function": {
+        "name": "read_files",
+        "description": "Reads content from multiple files.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "description": "List of file paths to read (e.g., ['app.py', 'config.json'])",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["paths"]
+        }
+    }
+}
