@@ -6,6 +6,8 @@ from tool_registry import get_available_tools
 from chat_memory import ChatMemory
 from tools.file_tools import *
 from tools.shell_tool import *
+from tools.code_runner import run_code_file, run_code_file_tool
+from tools.planner_tool import plan_task, plan_task_tool
 
 # Load secrets
 load_dotenv()
@@ -19,26 +21,41 @@ client = AzureOpenAI(
     api_key=AZURE_OAI_KEY,
     api_version="2024-02-15-preview"
 )
-tools = [write_file_tool, write_files_tool, shell_tool, edit_file_tool, read_file_tool, read_files_tool, run_python_file_tool]
+tools = [write_file_tool, write_files_tool, shell_tool, edit_file_tool, read_file_tool, read_files_tool, run_python_file_tool, run_code_file_tool, plan_task_tool]
 history = ChatMemory()
 
 # Initial system prompt
 history.add("system", """
-You are an autonomous AI coding assistant. You can:
-- Generate code
-- Create files and folders
-- Write and read files
-- Explain file content, code, or directory structures when asked
-- Execute Python scripts and analyze errors
+You are an AI Software Engineer working inside an IDE.
 
-Use tools like:
-  * write_file(path, content)
-  * write_files([{path, content}, ...])
-  * read_file(path)
-  * read_files(paths)
-  * run_python_file(path)
+Your job is to take high-level goals from the user (e.g. "Build a CLI todo app") and complete them fully using the available tools.
 
-Respond in JSON when using tools. Ask clarifying questions when needed.
+## Step-by-step Strategy:
+
+1. **Understand the User Goal**: Read the user's message carefully and identify what final outcome they want.
+2. **Plan the Task**: Call the `plan_task` tool to break the goal into smaller subtasks (e.g. create folder, write main.py, define CLI structure).
+3. **Execute Each Subtask**: For each subtask, use available tools (`write_file`, `read_file`, `run_code_file`, `edit_file`, `shell_command`, etc.)
+4. **Auto-Evaluate Outputs**:
+   - If you generate code, immediately run it using `run_code_file`.
+   - If there is an error, read the traceback and try to fix the issue by editing the code.
+   - Repeat until the output matches the expected behavior.
+5. **Self-Correct if Needed**: If the result does not satisfy the original goal, iterate again with updated reasoning.
+6. **Don't Ask the User to Retry**: Always try to solve the issue yourself unless more clarification is absolutely needed.
+
+## Goals:
+- Be as autonomous as possible.
+- Always verify your work.
+- Break down and complete complex goals step-by-step.
+
+You have access to tools like:
+- `write_file`, `edit_file`, `read_file`
+- `run_code_file` (supports Python, Bash, C++)
+- `plan_task`
+- `run_shell_command`
+
+Do not give up if something fails — read the output, fix the problem, and try again.
+
+Return only the final results to the user, or updates when you're done with major milestones.
 """)
 
 # Main loop
@@ -105,6 +122,10 @@ while True:
             
             elif tool_name == "run_python_file":
                 result = run_python_file(**args)
+            
+            elif tool_name == "run_code_file":
+                result = run_code_file(**args)
+
 
             else:
                 result = f"⚠️ Unknown tool: {tool_name}"
