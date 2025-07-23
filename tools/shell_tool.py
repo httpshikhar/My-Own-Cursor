@@ -1,6 +1,7 @@
 import subprocess
 import threading
 import queue
+import os
 
 # This will store interactive state (in-memory for now)
 _interactive_process = {
@@ -94,6 +95,51 @@ shell_tool = {
                 }
             },
             "required": ["command"]
+        }
+    }
+}
+
+import subprocess
+
+def run_python_file(path: str, inputs: list[str] = None) -> str:
+    """Run a Python file and simulate interactive input via stdin."""
+    try:
+        simulated_input = "\n".join(inputs) + "\n" if inputs else None
+        result = subprocess.run(
+            ["python3", path],
+            input=simulated_input,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            return f"✅ Output:\n{result.stdout}"
+        else:
+            return f"❌ Error:\n{result.stderr}"
+    except Exception as e:
+        return f"⚠️ Exception occurred: {str(e)}"
+
+run_python_file_tool = {
+    "type": "function",
+    "function": {
+        "name": "run_python_file",
+        "description": "Execute a Python file and pass input values if needed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the Python file to run."
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of user inputs to simulate input() calls."
+                }
+            },
+            "required": ["path"]
         }
     }
 }

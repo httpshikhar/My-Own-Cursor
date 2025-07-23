@@ -19,7 +19,7 @@ client = AzureOpenAI(
     api_key=AZURE_OAI_KEY,
     api_version="2024-02-15-preview"
 )
-tools = [write_file_tool, write_files_tool, shell_tool, edit_file_tool, read_file_tool, read_files_tool]
+tools = [write_file_tool, write_files_tool, shell_tool, edit_file_tool, read_file_tool, read_files_tool, run_python_file_tool]
 history = ChatMemory()
 
 # Initial system prompt
@@ -29,12 +29,14 @@ You are an autonomous AI coding assistant. You can:
 - Create files and folders
 - Write and read files
 - Explain file content, code, or directory structures when asked
+- Execute Python scripts and analyze errors
 
 Use tools like:
   * write_file(path, content)
   * write_files([{path, content}, ...])
   * read_file(path)
   * read_files(paths)
+  * run_python_file(path)
 
 Respond in JSON when using tools. Ask clarifying questions when needed.
 """)
@@ -100,6 +102,9 @@ while True:
 
             elif tool_name == "read_files":
                 result = read_files(**args)
+            
+            elif tool_name == "run_python_file":
+                result = run_python_file(**args)
 
             else:
                 result = f"⚠️ Unknown tool: {tool_name}"
