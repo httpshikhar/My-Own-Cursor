@@ -17,6 +17,7 @@ from tools.project_generator import generate_project_structure, generate_project
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.live import Live
 from rich.syntax import Syntax
 from rich import box
 import difflib
@@ -242,6 +243,135 @@ def _chat_create(*, messages, tools=None, tool_choice=None, model: str = AZURE_O
     except Exception as err:
         console.print(Panel(str(err), title="Unexpected error", border_style="red", box=box.ROUNDED))
         return None
+
+
+def _chat_stream(
+    *,
+    messages,
+    tools=None,
+    tool_choice=None,
+    model: str = AZURE_OAI_DEPLOYMENT,
+    panel_title: str | None = None,
+    panel_border_style: str | None = None,
+):
+    """Stream assistant output with a spinner. Returns (response, rendered_bool) or (None, False) on error.
+
+    rendered_bool indicates whether we already rendered assistant content (so caller should not re-print it).
+    """
+    try:
+        # Establish the stream
+        stream_ctx = client.chat.completions.stream(
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
+        accumulated_text = ""
+        rendered_any_content = False
+        placeholder = "…"
+        with stream_ctx as stream:
+            # Keep spinner visible until first content token arrives (or completion ends)
+            with console.status("Assistant is thinking...", spinner="dots"):
+                for event in stream:
+                    event_type = getattr(event, "type", None)
+                    if event_type == "message.delta":
+                        delta = getattr(event, "delta", None)
+                        if delta is None:
+                            continue
+                        content = getattr(delta, "content", None)
+                        if isinstance(content, str):
+                            accumulated_text += content
+                            rendered_any_content = rendered_any_content or bool(content)
+                        elif isinstance(content, list):
+                            for part in content:
+                                text = ""
+                                if isinstance(part, dict):
+                                    text = part.get("text") or part.get("content") or ""
+                                elif isinstance(part, str):
+                                    text = part
+                                accumulated_text += text
+                                rendered_any_content = rendered_any_content or bool(text)
+                        # We got first visible content: break to start live panel
+                        if rendered_any_content:
+                            break
+                    elif event_type == "message.completed":
+                        # No content is expected; stop spinner and proceed to finalize
+                        break
+                    else:
+                        # Ignore other event types while waiting
+                        pass
+
+            # Start live panel (spinner has just stopped)
+            with Live(
+                Panel(
+                    Markdown(accumulated_text or placeholder),
+                    title=(panel_title or "Assistant"),
+                    border_style=(panel_border_style or "magenta"),
+                    box=box.ROUNDED,
+                ),
+                refresh_per_second=12,
+                console=console,
+                transient=True,
+            ) as live:
+                for event in stream:
+                    event_type = getattr(event, "type", None)
+                    if event_type == "message.delta":
+                        delta = getattr(event, "delta", None)
+                        if delta is None:
+                            continue
+                        content = getattr(delta, "content", None)
+                        if isinstance(content, str):
+                            accumulated_text += content
+                            rendered_any_content = rendered_any_content or bool(content)
+                        elif isinstance(content, list):
+                            for part in content:
+                                text = ""
+                                if isinstance(part, dict):
+                                    text = part.get("text") or part.get("content") or ""
+                                elif isinstance(part, str):
+                                    text = part
+                                accumulated_text += text
+                                rendered_any_content = rendered_any_content or bool(text)
+                        live.update(
+                            Panel(
+                                Markdown(accumulated_text or placeholder),
+                                title=(panel_title or "Assistant"),
+                                border_style=(panel_border_style or "magenta"),
+                                box=box.ROUNDED,
+                            )
+                        )
+                    elif event_type == "tool_calls.delta":
+                        # Not user-facing; ignore
+                        pass
+                    elif event_type == "message.completed":
+                        # Final message assembled
+                        pass
+                final_response = stream.get_final_response()
+
+        # After the live context exits, persist output only if we actually rendered content
+        if rendered_any_content:
+            console.print(
+                Panel(
+                    Markdown(accumulated_text),
+                    title=(panel_title or "Assistant"),
+                    border_style=(panel_border_style or "magenta"),
+                    box=box.ROUNDED,
+                )
+            )
+        return final_response, rendered_any_content
+    except APIConnectionError as err:
+        help_text = (
+            "Connection to Azure OpenAI failed. If you are behind a proxy or corporate CA, set "
+            "`AZURE_OAI_CA_BUNDLE` to your PEM file, or set `AZURE_OAI_INSECURE=true` to skip verification (not recommended).\n"
+            "Alternatives: set `REQUESTS_CA_BUNDLE` or `SSL_CERT_FILE` env vars.\n"
+            f"Original error: {err}"
+        )
+        console.print(Panel(help_text, title="Connection error", border_style="red", box=box.ROUNDED))
+        return None, False
+    except Exception:
+        # If streaming is not supported or any error occurs, fall back to non-streaming
+        response = _chat_create(messages=messages, tools=tools, tool_choice=tool_choice, model=model)
+        return response, False
 # Prompts for different specialized agents
 PLANNER_PROMPT = (
     "You are the Planner agent. Your job is to break the user's goal into a concise, actionable plan of 3-10 steps focused on coding tasks. "
@@ -267,11 +397,17 @@ def run_multi_agent_session(user_goal: str):
         {"role": "system", "content": PLANNER_PROMPT},
         {"role": "user", "content": f"Plan the following goal:\n{user_goal}"},
     ]
-    planner_response = _chat_create(messages=planner_messages, model=AZURE_OAI_DEPLOYMENT)
+    planner_response, rendered_stream = _chat_stream(
+        messages=planner_messages,
+        model=AZURE_OAI_DEPLOYMENT,
+        panel_title="Planner",
+        panel_border_style="green",
+    )
     if planner_response is None:
         return
     planner_plan = planner_response.choices[0].message.content or "(No plan produced)"
-    console.print(Panel(Markdown(planner_plan), title="Planner", border_style="green", box=box.ROUNDED))
+    if not rendered_stream:
+        console.print(Panel(Markdown(planner_plan), title="Planner", border_style="green", box=box.ROUNDED))
 
     # ---------- Coder (tool-enabled loop) ----------
     created_files_session: list[str] = []
@@ -286,7 +422,14 @@ def run_multi_agent_session(user_goal: str):
     ]
 
     for _ in range(15):
-        response = _chat_create(messages=coder_history, tools=tools, tool_choice="auto", model=AZURE_OAI_DEPLOYMENT)
+        response, rendered_stream = _chat_stream(
+            messages=coder_history,
+            tools=tools,
+            tool_choice="auto",
+            model=AZURE_OAI_DEPLOYMENT,
+            panel_title="Coder",
+            panel_border_style="magenta",
+        )
         if response is None:
             console.print("[bold red]Stopping due to connection error.[/bold red]")
             break
@@ -296,7 +439,8 @@ def run_multi_agent_session(user_goal: str):
         if not tool_calls:
             final_content = reply.content or "(No reply)"
             final_notes = final_content
-            console.print(Panel(Markdown(final_content), title="Coder", border_style="magenta", box=box.ROUNDED))
+            if not rendered_stream:
+                console.print(Panel(Markdown(final_content), title="Coder", border_style="magenta", box=box.ROUNDED))
             break
 
         # Record assistant message with tool calls
@@ -399,7 +543,14 @@ def run_multi_agent_session(user_goal: str):
         ]
 
         for _ in range(8):
-            response = _chat_create(messages=reviewer_history, tools=tools, tool_choice="auto", model=AZURE_OAI_DEPLOYMENT)
+            response, rendered_stream = _chat_stream(
+                messages=reviewer_history,
+                tools=tools,
+                tool_choice="auto",
+                model=AZURE_OAI_DEPLOYMENT,
+                panel_title="Reviewer",
+                panel_border_style="yellow",
+            )
             if response is None:
                 console.print("[bold red]Stopping reviewer due to connection error.[/bold red]")
                 break
@@ -408,7 +559,8 @@ def run_multi_agent_session(user_goal: str):
 
             if not tool_calls:
                 review_notes = reply.content or "(No review notes)"
-                console.print(Panel(Markdown(review_notes), title="Reviewer", border_style="yellow", box=box.ROUNDED))
+                if not rendered_stream:
+                    console.print(Panel(Markdown(review_notes), title="Reviewer", border_style="yellow", box=box.ROUNDED))
                 break
 
             reviewer_history.append({
@@ -537,12 +689,12 @@ def run_repl_loop():
         commands_session: list[str] = []
         final_notes: str | None = None
         for iteration in range(10):  # max 10 steps to prevent infinite loops
-            response = client.chat.completions.create(
-                model=AZURE_OAI_DEPLOYMENT,
-                messages=history.get(),
-                tools=tools,
-                tool_choice="auto"
+            response, rendered_stream = _chat_stream(
+                messages=history.get(), tools=tools, tool_choice="auto", model=AZURE_OAI_DEPLOYMENT
             )
+            if response is None:
+                console.print("[bold red]Stopping due to connection error.[/bold red]")
+                break
 
             reply = response.choices[0].message
             tool_calls = reply.tool_calls
@@ -557,7 +709,9 @@ def run_repl_loop():
                 if has_file_changes:
                     _render_summary(created_files_session, edited_files_session, commands_session, final_notes)
                 else:
-                    console.print(_panel_for("assistant", final_content))
+                    # If we already rendered the streamed content, do not re-print
+                    if not rendered_stream:
+                        console.print(_panel_for("assistant", final_content))
                 break
 
             # Step 4: Tool calls present, execute them
