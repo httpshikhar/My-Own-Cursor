@@ -1,0 +1,17 @@
+README.md
+chat_memory.py
+main.py
+pyproject.toml
+tool_registry.py
+ai_ide.egg-info/PKG-INFO
+ai_ide.egg-info/SOURCES.txt
+ai_ide.egg-info/dependency_links.txt
+ai_ide.egg-info/entry_points.txt
+ai_ide.egg-info/requires.txt
+ai_ide.egg-info/top_level.txt
+tools/__init__.py
+tools/code_runner.py
+tools/file_tools.py
+tools/planner_tool.py
+tools/project_generator.py
+tools/shell_tool.py

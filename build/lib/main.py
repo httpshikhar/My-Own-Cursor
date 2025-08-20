@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 from openai import AzureOpenAI
 from openai import APIConnectionError
 import httpx
@@ -33,26 +33,8 @@ import shutil
 import time
 import threading
 
-# Load secrets from multiple locations so running from any folder works
-# Order: CWD .env -> nearest .env upwards -> ~/.config/ai-ide/.env -> ~/.env
-try:
-    # 1) Current working directory
-    load_dotenv(override=False)
-    # 2) Walk up to find the nearest .env
-    _found = find_dotenv(usecwd=True)
-    if _found:
-        load_dotenv(_found, override=False)
-    # 3) XDG config location
-    _xdg = os.path.expanduser("~/.config/ai-ide/.env")
-    if os.path.exists(_xdg):
-        load_dotenv(_xdg, override=False)
-    # 4) Home directory .env
-    _home_env = os.path.expanduser("~/.env")
-    if os.path.exists(_home_env):
-        load_dotenv(_home_env, override=False)
-except Exception:
-    # Ignore env loading errors; missing files are fine
-    pass
+# Load secrets
+load_dotenv()
 AZURE_OAI_ENDPOINT = os.getenv("AZURE_OAI_ENDPOINT")
 AZURE_OAI_KEY = os.getenv("AZURE_OAI_KEY")
 AZURE_OAI_DEPLOYMENT = os.getenv("AZURE_OAI_DEPLOYMENT")
